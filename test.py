@@ -15,11 +15,11 @@ load_dotenv()
 import os
 api_key = os.getenv('api_key')
 
-# LLMs
+# Initialize models
 llm = GoogleGenerativeAI(google_api_key=api_key, model="gemini-1.5-flash")
 embeddings = GoogleGenerativeAIEmbeddings(google_api_key=api_key, model="models/embedding-001")
 
-# Reading docx
+# Function to read .docx files
 def docx_read(uploaded_file):
     text1 = []
     doc = Document(uploaded_file)
@@ -27,7 +27,7 @@ def docx_read(uploaded_file):
         text1.append(para.text)
     return "\n".join(text1)
 
-# Reading pdf
+# Function to read .pdf files
 def pdf_read(uploaded_file):
     text2 = ""
     pdf = PdfReader(uploaded_file)
@@ -35,7 +35,7 @@ def pdf_read(uploaded_file):
         text2 += page.extract_text()
     return text2
 
-# parsing uploaded file
+# Function to parse uploaded resume files
 def resume_parse(uploaded_file):
     if uploaded_file.name.endswith(".docx"):
         return docx_read(uploaded_file)
@@ -44,29 +44,29 @@ def resume_parse(uploaded_file):
     else:
         raise ValueError("Unsupported file format. Upload either a PDF or DOCX file.")
 
-# Dividing into chunks
+# Function to divide resume text into chunks
 def create_chunks(resume_text):
     resume_chunks = []
     current_section = []
-    section_headers = ["Experience", "Education", "Skills", "Projects", "Awards"]  
+    section_headers = ["Experience", "Education", "Skills", "Projects", "Awards"]  # Define key section headers
 
     # Iterate through lines and group them by sections
     lines = resume_text.split("\n")
     for line in lines:
         line = line.strip()
-        if any(header in line for header in section_headers):  
-            if current_section:  
+        if any(header in line for header in section_headers):  # Detect section headers
+            if current_section:  # Add the previous section if it exists
                 resume_chunks.append("\n".join(current_section))
-            current_section = [line]  
+            current_section = [line]  # Start a new section
         else:
-            current_section.append(line)  
+            current_section.append(line)  # Add line to the current section
 
     if current_section:
-        resume_chunks.append("\n".join(current_section))  
+        resume_chunks.append("\n".join(current_section))  # Add the last section
 
     return resume_chunks
 
-# Creating embeddings and storing 
+# Function to create embeddings and store them in a vector store
 def embeddings_store(resume_chunks):
     vector = embeddings.embed_documents(resume_chunks)
     index = faiss.IndexFlatL2(len(vector[0]))
@@ -78,10 +78,10 @@ def embeddings_store(resume_chunks):
     vector_store.add_texts(resume_chunks)
     return vector_store
 
-# Final Model
+# Function to create the QA model
 def create_model(vector_store):
     prompt_template = PromptTemplate(
-        template=""" 
+    template=""" 
 You are an AI-powered Applicant Tracking System (ATS) assistant. Your task is to review resumes, provide a detailed evaluation, and offer career advice. 
 
 **Evaluation Criteria**:
@@ -109,8 +109,9 @@ Here's the resume content:
 
 Provide a response in a clear and easy-to-understand style.
 """,
-        input_variables=["context"]
-    )
+    input_variables=["context"]
+)
+
 
     retriever = vector_store.as_retriever()
     qa_chain = (
@@ -119,17 +120,10 @@ Provide a response in a clear and easy-to-understand style.
         | llm)
     return qa_chain
 
-
-st.markdown(
-    """
-    <h1 style="text-align: center; font-size: 40px; color: black; margin-top: 20px;">
-        AI based ATS Scorer
-    </h1>
-    """,
-    unsafe_allow_html=True
-)
+# Streamlit UI for file upload and query input
 uploaded_file = st.file_uploader("Upload a PDF or DOC file", type=["pdf", "docx"])
 if uploaded_file:
+    # Process the uploaded resume
     resume_text = resume_parse(uploaded_file)
     resume_chunks = create_chunks(resume_text)
     vector_store = embeddings_store(resume_chunks)
@@ -141,7 +135,3 @@ if uploaded_file:
         response = qa_chain.invoke(query)
         st.subheader("ATS Feedback")
         st.write(response)
-
-
-
-
